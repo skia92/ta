@@ -4,3 +4,12 @@
 !_TAG_PROGRAM_NAME	Exuberant Ctags	//
 !_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
 !_TAG_PROGRAM_VERSION	5.8	//
+CC	Makefile	/^CC= gcc$/;"	m
+CFLAGS	Makefile	/^CFLAGS= -g -Wall$/;"	m
+foo	map.c	/^int foo;$/;"	v
+main	main.c	/^int main() {$/;"	f
+main	map.c	/^int main(int argc, char *argv[]) {$/;"	f
+main	wc.c	/^int main(int argc, char* argv[]) {$/;"	f
+recur	map.c	/^int recur(int i) {$/;"	f
+stuff	map.c	/^int stuff = 7;$/;"	v
+wc	wc.c	/^void wc(char* text, int file_size, char* file_name) {$/;"	f

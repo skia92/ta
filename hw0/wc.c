@@ -10,6 +10,8 @@ int main(int argc, char* argv[]) {
     FILE* fd;
     size_t result;
 
+    printf("_main @ %p\n", main);
+
     if (!argv[1]) {
         fprintf(stderr, "You should specify an exact file name\n");
         exit(1);
