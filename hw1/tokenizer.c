@@ -5,14 +5,23 @@
 
 struct tokens {
   size_t tokens_length;
-  char **tokens;
+  char **tokens; // string token array
   size_t buffers_length;
-  char **buffers;
+  char **buffers; // string array
 };
 
 static void *vector_push(char ***pointer, size_t *size, void *elem) {
+    /* The realloc() function changes the size of the memory block pointed
+     * to by ptr to size bytes. The contents will be unchanged in the
+     * range from the start of the region up to the minimum of the old
+     * and new sizes. If the new size is larger than the old size, 
+     * the added memory will not be initialized. */
   *pointer = (char**) realloc(*pointer, sizeof(char *) * (*size + 1));
+
+  // token array!
   (*pointer)[*size] = elem;
+
+  // tokens_length++
   *size += 1;
   return elem;
 }
@@ -20,6 +29,8 @@ static void *vector_push(char ***pointer, size_t *size, void *elem) {
 static void *copy_word(char *source, size_t n) {
   source[n] = '\0';
   char *word = (char *) malloc(n + 1);
+  /* If the length of src is less than n, strncpy() writes additional 
+   * null bytes to dest to ensure that a total of n bytes are written. */
   strncpy(word, source, n + 1);
   return word;
 }
@@ -53,6 +64,7 @@ struct tokens *tokenize(const char *line) {
       } else if (c == '"') {
         mode = MODE_DQUOTE;
       } else if (c == '\\') {
+          // ???
         if (i + 1 < line_length) {
           token[n++] = line[++i];
         }

@@ -64,6 +64,7 @@ int cmd_help(unused struct tokens *tokens) {
 
 /* Exits this shell */
 int cmd_exit(unused struct tokens *tokens) {
+    printf("Bye.\n");
     exit(0);
 }
 
@@ -168,7 +169,62 @@ int main(unused int argc, unused char *argv[]) {
       cmd_table[fundex].fun(tokens);
     } else {
       /* REPLACE this to run commands as programs. */
-      fprintf(stdout, "This shell doesn't know how to run programs.\n");
+      pid_t ch_pid, w;
+      int status;
+
+      ch_pid = fork();
+      if (ch_pid == -1) {
+          perror("fork");
+          exit(EXIT_FAILURE);
+      }
+      
+      if (ch_pid == 0) {
+          char *proc = tokens_get_token(tokens, 0);
+          int result = 0;
+          size_t t_length = tokens_get_length(tokens);
+          char **ch_argv;
+
+          // I don't know why I cannot use tokens->tokens
+          // Compiler keeps saying this is a incomplete type reference.
+          if (t_length > 1) {
+              ch_argv = (char **) malloc(sizeof(char *) * (t_length + 1));
+              
+              for (int i = 0; i < t_length; i++) {
+                  ch_argv[i] = tokens_get_token(tokens, i);
+              }
+
+              ch_argv[t_length] = NULL;
+
+              result = execv(proc, ch_argv);
+              
+              for (int i = 0; i < t_length + 1; i++) {
+                  free(ch_argv[i]);
+              }
+
+              if (ch_argv) {
+                  free(ch_argv);
+              }
+
+          } else {
+              // No argument
+              result = execl(proc, proc, NULL);
+          }
+
+          if (result < 0) {
+              printf("Error in child process: %d\n", errno);
+
+              exit(errno);
+          }
+      } else {
+          while ((w = waitpid(-1, &status, 0)) != ch_pid) {
+              if (w < 0 && errno == ECHILD) {
+                  printf("Error in waitpid: %d\n", errno);
+                  break;
+              }
+              errno = 0;
+          }
+      }
+      //fprintf(stdout, "This shell doesn't know how to run programs.\n");
     }
 
     if (shell_is_interactive)
