@@ -148,6 +148,31 @@ void init_shell() {
   }
 }
 
+char *find(char *file_name, char *path) {
+   char *full_path = NULL;
+   char *ptr;
+   char *temp_path = (char *) malloc(sizeof(char) * strlen(path) + 1);
+   unsigned int length = strlen(file_name);
+
+   strncpy(temp_path, path, strlen(path) + 1);
+   ptr = strtok(temp_path, ":");
+   while (ptr != NULL) {
+       full_path = (char *) malloc(sizeof(char) * (length + 1 + strlen(ptr) + 1));
+
+       strcat(full_path, ptr);
+       strcat(full_path, "/");
+       strcat(full_path, file_name);
+ 
+       if (access(full_path, F_OK) == 0)
+           break;
+
+       free(full_path);
+       ptr = strtok(NULL, ":");
+   }
+
+   return full_path;
+}
+
 int main(unused int argc, unused char *argv[]) {
   init_shell();
 
@@ -168,63 +193,70 @@ int main(unused int argc, unused char *argv[]) {
     if (fundex >= 0) {
       cmd_table[fundex].fun(tokens);
     } else {
-      /* REPLACE this to run commands as programs. */
-      pid_t ch_pid, w;
-      int status;
+        pid_t ch_pid, w;
+        int status;
+        char *path = getenv("PATH");
+        char *file_name = tokens_get_token(tokens, 0);
+        char *part;
 
-      ch_pid = fork();
-      if (ch_pid == -1) {
-          perror("fork");
-          exit(EXIT_FAILURE);
-      }
+        part = strchr(file_name, '/');
+
+        if (part == NULL)
+            file_name = find(file_name, path);
+
+        ch_pid = fork();
+        if (ch_pid == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
       
-      if (ch_pid == 0) {
-          char *proc = tokens_get_token(tokens, 0);
-          int result = 0;
-          size_t t_length = tokens_get_length(tokens);
-          char **ch_argv;
+        if (ch_pid == 0) {
+            int result = 0;
+            size_t t_length = tokens_get_length(tokens);
+            char **ch_argv;
 
-          // I don't know why I cannot use tokens->tokens
-          // Compiler keeps saying this is a incomplete type reference.
-          if (t_length > 1) {
-              ch_argv = (char **) malloc(sizeof(char *) * (t_length + 1));
+            // I don't know why I cannot use tokens->tokens
+            // Compiler keeps saying this is a incomplete type reference.
+            if (t_length > 1) {
+                ch_argv = (char **) malloc(sizeof(char *) * (t_length + 1));
               
-              for (int i = 0; i < t_length; i++) {
-                  ch_argv[i] = tokens_get_token(tokens, i);
-              }
+                for (int i = 0; i < t_length; i++) {
+                    ch_argv[i] = tokens_get_token(tokens, i);
+                }
 
-              ch_argv[t_length] = NULL;
+                ch_argv[t_length] = NULL;
 
-              result = execv(proc, ch_argv);
-              
-              for (int i = 0; i < t_length + 1; i++) {
-                  free(ch_argv[i]);
-              }
+                result = execv(file_name, ch_argv);
 
-              if (ch_argv) {
-                  free(ch_argv);
-              }
+                /* If execv() fails, the code below will operate */
+                for (int i = 0; i < t_length + 1; i++) {
+                    free(ch_argv[i]);
+                }
 
-          } else {
-              // No argument
-              result = execl(proc, proc, NULL);
-          }
+                if (ch_argv) {
+                    free(ch_argv);
+                }
 
-          if (result < 0) {
-              printf("Error in child process: %d\n", errno);
+            } else {
+                // No argument
+                result = execl(file_name, file_name, NULL);
+            }
 
-              exit(errno);
-          }
-      } else {
-          while ((w = waitpid(-1, &status, 0)) != ch_pid) {
-              if (w < 0 && errno == ECHILD) {
-                  printf("Error in waitpid: %d\n", errno);
-                  break;
-              }
-              errno = 0;
-          }
-      }
-      //fprintf(stdout, "This shell doesn't know how to run programs.\n");
+            if (result < 0) {
+                printf("Error in child process: %d\n", errno);
+
+                exit(errno);
+            }
+        } else {
+            while ((w = waitpid(-1, &status, 0)) != ch_pid) {
+                if (w < 0 && errno == ECHILD) {
+                    printf("Error in waitpid: %d\n", errno);
+                    break;
+                }
+                errno = 0;
+            }
+        }
+        //fprintf(stdout, "This shell doesn't know how to run programs.\n");
     }
 
     if (shell_is_interactive)
