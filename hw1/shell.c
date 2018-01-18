@@ -18,8 +18,6 @@ extern int errno;
 
 /* Constant Variable */
 #define PATH_MAX 512
-#define INPUT 0
-#define OUTPUT 1
 
 /* Convenience macro to silence compiler warnings about unused function parameters. */
 #define unused __attribute__((unused))
@@ -200,24 +198,27 @@ int main(unused int argc, unused char *argv[]) {
         pid_t ch_pid, w;
         int status;
         char *path = getenv("PATH");
-        char *file_name = tokens_get_token(tokens, 0);
+        char *cmd_name = tokens_get_token(tokens, 0);
         char *part;
         char *file_arg;
-        char read_buf;
         
         char **ch_arg = NULL;
         int ch_arg_len = 0;
 
         int pipefd[2];
-        int mode;
+        const int MODE_INPUT = 0,
+            MODE_OUTPUT = 1,
+            MODE_NORMAL = 2;
+        int mode = MODE_NORMAL;
+        char buf;
 
-        part = strchr(file_name, '/');
+        part = strchr(cmd_name, '/');
 
         if (part == NULL)
-            file_name = find(file_name, path);
+            cmd_name = find(cmd_name, path);
 
-        if (file_name == NULL)
-            file_name = tokens_get_token(tokens, 0);
+        if (cmd_name == NULL)
+            cmd_name = tokens_get_token(tokens, 0);
         
         if (pipe(pipefd) == -1) {
             printf("Error in pipe(): %d\n", errno);
@@ -229,15 +230,16 @@ int main(unused int argc, unused char *argv[]) {
             size_t temp_len = strlen(temp);
 
             if (i != 0 && (strcmp("<", temp) == 0)) {
-                mode = INPUT;
+                mode = MODE_INPUT;
                 file_arg = tokens_get_token(tokens, i + 1);
                 break;
             } else if (i != 0 && (strcmp(">", temp) == 0)) {
-                mode = OUTPUT;
+                mode = MODE_OUTPUT;
                 file_arg = tokens_get_token(tokens, i + 1);
                 break;
             } else if (strcmp(">", temp) == 0 ||
                 strcmp("<", temp) == 0) {
+                printf("Invalid argument.\n");
                 // Invalid argument
                 exit(2);
             } else {
@@ -258,21 +260,42 @@ int main(unused int argc, unused char *argv[]) {
         }
       
         if (ch_pid == 0) {
-            int result = 0;
+            /* Child process */
+            int result;
+            const int MAX_NAME_SIZE = 128;
+            char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
+            int input_fd;
+
+            if (mode == MODE_INPUT) {
+                close(pipefd[1]);
+
+                read(pipefd[0], file_name, MAX_NAME_SIZE);
+
+                if ((input_fd = open(file_name, O_RDONLY)) < 0) {
+                    printf("Error in input file: %d\n", errno);
+                    exit(EXIT_FAILURE);
+                }
+
+                dup2(input_fd, STDIN_FILENO);
+
+            } else if (mode == MODE_OUTPUT) {
+                close(pipefd[0]);
+                dup2(pipefd[1], STDOUT_FILENO);
+            }
 
             if (ch_arg_len > 1) {
-                /* If mode is something then change this as certain file descriptor */
-                result = execv(file_name, ch_arg);
+                /* Using an array of argument */
+                result = execv(cmd_name, ch_arg);
             } else {
                 /* Only a command. No arguments */
-                result = execl(file_name, file_name, NULL);
+                result = execl(cmd_name, cmd_name, NULL);
             }
 
             /* Check exec() function error */
             if (result < 0) {
                 switch(errno) {
                     case ENOENT:
-                        printf("%s: command not found\n", file_name);
+                        printf("%s: command not found\n", cmd_name);
                         break;
                     default:
                         printf("Error in child process: %d\n", errno);
@@ -281,6 +304,15 @@ int main(unused int argc, unused char *argv[]) {
                 exit(errno);
             }
         } else {
+            /* Parent process */
+
+            /* If a symbol is '<' */
+            if (mode == MODE_INPUT) {
+                close(pipefd[0]);
+                write(pipefd[1], file_arg, strlen(file_arg));
+                close(pipefd[1]);
+            }
+
             /* Wait for termination of child process */
             while ((w = waitpid(-1, &status, 0)) != ch_pid) {
                 if (w < 0 && errno == ECHILD) {
@@ -290,25 +322,34 @@ int main(unused int argc, unused char *argv[]) {
                 errno = 0;
             }
 
+            /* If a symbol is '>' */
+            if (mode == MODE_OUTPUT) {
+                int output_fd;
+                close(pipefd[1]);
+
+                if ((output_fd = open(file_arg, O_WRONLY | O_CREAT, 
+                    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
+                    printf("Error in open(): %d\n", errno);
+                    exit(EXIT_FAILURE);
+                }
+                
+                while (read(pipefd[0], &buf, 1) > 0) {
+                    write(output_fd, &buf, 1);
+                }
+                
+                close(pipefd[0]);
+            }
+            
+            /* Flushing all STD stream */
+            fsync(STDIN_FILENO);
+            fsync(STDOUT_FILENO);
+
+            /* Destroy all buffers */
             for (int i = 0; i < ch_arg_len; i++) {
                 free(ch_arg[i]);
             }
 
             free(ch_arg);
-
-            /* After execution, check if there is buffer in STDOUT */
-
-            /*
-            if ((output_fd = open(output_file, O_WRONLY)) < 0) {
-                printf("Error in open(): %d\n", errno);
-                exit(EXIT_FAILURE);
-            }
-            
-            while (read(pipefd[0], &read_buf, 1) > 0)
-                write(output_fd, &read_buf, 1);
-
-            close(output_fd);
-            close(pipefd[0]);*/
 
         }
         //fprintf(stdout, "This shell doesn't know how to run programs.\n");
