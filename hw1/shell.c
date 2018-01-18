@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "tokenizer.h"
 
@@ -17,6 +18,8 @@ extern int errno;
 
 /* Constant Variable */
 #define PATH_MAX 512
+#define INPUT 0
+#define OUTPUT 1
 
 /* Convenience macro to silence compiler warnings about unused function parameters. */
 #define unused __attribute__((unused))
@@ -159,7 +162,7 @@ char *find(char *file_name, char *path) {
    while (ptr != NULL) {
        full_path = (char *) malloc(sizeof(char) * (length + 1 + strlen(ptr) + 1));
 
-       strcat(full_path, ptr);
+       strcpy(full_path, ptr);
        strcat(full_path, "/");
        strcat(full_path, file_name);
  
@@ -167,6 +170,7 @@ char *find(char *file_name, char *path) {
            break;
 
        free(full_path);
+       full_path = NULL;
        ptr = strtok(NULL, ":");
    }
 
@@ -198,11 +202,54 @@ int main(unused int argc, unused char *argv[]) {
         char *path = getenv("PATH");
         char *file_name = tokens_get_token(tokens, 0);
         char *part;
+        char *file_arg;
+        char read_buf;
+        
+        char **ch_arg = NULL;
+        int ch_arg_len = 0;
+
+        int pipefd[2];
+        int mode;
 
         part = strchr(file_name, '/');
 
         if (part == NULL)
             file_name = find(file_name, path);
+
+        if (file_name == NULL)
+            file_name = tokens_get_token(tokens, 0);
+        
+        if (pipe(pipefd) == -1) {
+            printf("Error in pipe(): %d\n", errno);
+            exit(EXIT_FAILURE);
+        }
+
+        for (int i = 0; i < tokens_get_length(tokens); i++) {
+            char *temp = tokens_get_token(tokens, i);
+            size_t temp_len = strlen(temp);
+
+            if (i != 0 && (strcmp("<", temp) == 0)) {
+                mode = INPUT;
+                file_arg = tokens_get_token(tokens, i + 1);
+                break;
+            } else if (i != 0 && (strcmp(">", temp) == 0)) {
+                mode = OUTPUT;
+                file_arg = tokens_get_token(tokens, i + 1);
+                break;
+            } else if (strcmp(">", temp) == 0 ||
+                strcmp("<", temp) == 0) {
+                // Invalid argument
+                exit(2);
+            } else {
+                ch_arg_len++;
+                ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
+                ch_arg[ch_arg_len - 1] = (char *) malloc(sizeof(char) * temp_len + 1);
+
+                strcpy(ch_arg[ch_arg_len - 1], temp);
+            }
+        }
+
+        ch_arg[ch_arg_len] = NULL;
 
         ch_pid = fork();
         if (ch_pid == -1) {
@@ -212,42 +259,29 @@ int main(unused int argc, unused char *argv[]) {
       
         if (ch_pid == 0) {
             int result = 0;
-            size_t t_length = tokens_get_length(tokens);
-            char **ch_argv;
 
-            // I don't know why I cannot use tokens->tokens
-            // Compiler keeps saying this is a incomplete type reference.
-            if (t_length > 1) {
-                ch_argv = (char **) malloc(sizeof(char *) * (t_length + 1));
-              
-                for (int i = 0; i < t_length; i++) {
-                    ch_argv[i] = tokens_get_token(tokens, i);
-                }
-
-                ch_argv[t_length] = NULL;
-
-                result = execv(file_name, ch_argv);
-
-                /* If execv() fails, the code below will operate */
-                for (int i = 0; i < t_length + 1; i++) {
-                    free(ch_argv[i]);
-                }
-
-                if (ch_argv) {
-                    free(ch_argv);
-                }
-
+            if (ch_arg_len > 1) {
+                /* If mode is something then change this as certain file descriptor */
+                result = execv(file_name, ch_arg);
             } else {
-                // No argument
+                /* Only a command. No arguments */
                 result = execl(file_name, file_name, NULL);
             }
 
+            /* Check exec() function error */
             if (result < 0) {
-                printf("Error in child process: %d\n", errno);
+                switch(errno) {
+                    case ENOENT:
+                        printf("%s: command not found\n", file_name);
+                        break;
+                    default:
+                        printf("Error in child process: %d\n", errno);
+                }
 
                 exit(errno);
             }
         } else {
+            /* Wait for termination of child process */
             while ((w = waitpid(-1, &status, 0)) != ch_pid) {
                 if (w < 0 && errno == ECHILD) {
                     printf("Error in waitpid: %d\n", errno);
@@ -255,6 +289,27 @@ int main(unused int argc, unused char *argv[]) {
                 }
                 errno = 0;
             }
+
+            for (int i = 0; i < ch_arg_len; i++) {
+                free(ch_arg[i]);
+            }
+
+            free(ch_arg);
+
+            /* After execution, check if there is buffer in STDOUT */
+
+            /*
+            if ((output_fd = open(output_file, O_WRONLY)) < 0) {
+                printf("Error in open(): %d\n", errno);
+                exit(EXIT_FAILURE);
+            }
+            
+            while (read(pipefd[0], &read_buf, 1) > 0)
+                write(output_fd, &read_buf, 1);
+
+            close(output_fd);
+            close(pipefd[0]);*/
+
         }
         //fprintf(stdout, "This shell doesn't know how to run programs.\n");
     }
