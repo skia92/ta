@@ -65,7 +65,6 @@ int cmd_help(unused struct tokens *tokens) {
 
 /* Exits this shell */
 int cmd_exit(unused struct tokens *tokens) {
-    printf("Bye.\n");
     exit(0);
 }
 
@@ -189,12 +188,14 @@ int main(unused int argc, unused char *argv[]) {
     /* Split our line into words. */
     struct tokens *tokens = tokenize(line);
 
+
     /* Find which built-in function to run. */
     int fundex = lookup(tokens_get_token(tokens, 0));
 
     if (fundex >= 0) {
       cmd_table[fundex].fun(tokens);
-    } else {
+    } else if (tokens_get_length(tokens) > 0) {
+        /* If tokens variable is valid */
         pid_t ch_pid, w;
         int status;
         char *path = getenv("PATH");
@@ -208,7 +209,8 @@ int main(unused int argc, unused char *argv[]) {
         int pipefd[2];
         const int MODE_INPUT = 0,
             MODE_OUTPUT = 1,
-            MODE_NORMAL = 2;
+            MODE_NORMAL = 2,
+            MODE_BG = 3;
         int mode = MODE_NORMAL;
         char buf;
 
@@ -242,6 +244,8 @@ int main(unused int argc, unused char *argv[]) {
                 printf("Invalid argument.\n");
                 // Invalid argument
                 exit(2);
+            } else if (strcmp("&", temp) == 0) {
+                mode = MODE_BG;
             } else {
                 ch_arg_len++;
                 ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
@@ -261,10 +265,24 @@ int main(unused int argc, unused char *argv[]) {
       
         if (ch_pid == 0) {
             /* Child process */
+
+            /* Signal Handler */
+            signal(SIGTTIN, SIG_DFL);
+            signal(SIGTTOU, SIG_DFL);
+            signal(SIGINT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+
             int result;
             const int MAX_NAME_SIZE = 128;
             char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
             int input_fd;
+            //pid_t inner_ch_pid = getpid();
+
+            /* Setting pgid as itself */
+            //setpgid(inner_ch_pid, inner_ch_pid);
+
+            /* Setting foreground as current child process */
+            //tcsetpgrp(STDIN_FILENO, getppid());
 
             if (mode == MODE_INPUT) {
                 close(pipefd[1]);
@@ -306,6 +324,10 @@ int main(unused int argc, unused char *argv[]) {
         } else {
             /* Parent process */
 
+            /* Signal handler */
+            signal(SIGTSTP, SIG_IGN);
+            signal(SIGINT, SIG_IGN);
+
             /* If a symbol is '<' */
             if (mode == MODE_INPUT) {
                 close(pipefd[0]);
@@ -313,13 +335,18 @@ int main(unused int argc, unused char *argv[]) {
                 close(pipefd[1]);
             }
 
-            /* Wait for termination of child process */
-            while ((w = waitpid(-1, &status, 0)) != ch_pid) {
-                if (w < 0 && errno == ECHILD) {
-                    printf("Error in waitpid: %d\n", errno);
-                    break;
+            if (mode == MODE_BG) {
+                /* Move shell to foreground */
+               // tcsetpgrp(STDIN_FILENO, getppid());
+            } else {
+                /* Wait for termination of child process */
+                while ((w = waitpid(-1, &status, 0)) != ch_pid) {
+                    if (w < 0 && errno == ECHILD) {
+                        printf("Error in waitpid: %d\n", errno);
+                        break;
+                    }
+                    errno = 0;
                 }
-                errno = 0;
             }
 
             /* If a symbol is '>' */
