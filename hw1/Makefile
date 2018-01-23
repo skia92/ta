@@ -15,5 +15,9 @@ $(EXECUTABLES): $(OBJS)
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
+sleep: sleep.o
+	$(CC) $(CFLAGS) $< -o $@
+
 clean:
 	rm -rf $(EXECUTABLES) $(OBJS)
+	rm -rf sleep sleep.o

@@ -179,6 +179,7 @@ int main(unused int argc, unused char *argv[]) {
 
   static char line[4096];
   int line_num = 0;
+  int bg_proc = 0;
 
   /* Please only print shell prompts when standard input is not a tty */
   if (shell_is_interactive)
@@ -216,167 +217,178 @@ int main(unused int argc, unused char *argv[]) {
 
         part = strchr(cmd_name, '/');
 
+        /* If it is not based on the path */
         if (part == NULL)
             cmd_name = find(cmd_name, path);
 
-        if (cmd_name == NULL)
+        /* If the input data is only newline */
+        if (cmd_name == NULL) {
             cmd_name = tokens_get_token(tokens, 0);
-        
-        if (pipe(pipefd) == -1) {
-            printf("Error in pipe(): %d\n", errno);
-            exit(EXIT_FAILURE);
-        }
-
-        for (int i = 0; i < tokens_get_length(tokens); i++) {
-            char *temp = tokens_get_token(tokens, i);
-            size_t temp_len = strlen(temp);
-
-            if (i != 0 && (strcmp("<", temp) == 0)) {
-                mode = MODE_INPUT;
-                file_arg = tokens_get_token(tokens, i + 1);
-                break;
-            } else if (i != 0 && (strcmp(">", temp) == 0)) {
-                mode = MODE_OUTPUT;
-                file_arg = tokens_get_token(tokens, i + 1);
-                break;
-            } else if (strcmp(">", temp) == 0 ||
-                strcmp("<", temp) == 0) {
-                printf("Invalid argument.\n");
-                // Invalid argument
-                exit(2);
-            } else if (strcmp("&", temp) == 0) {
-                mode = MODE_BG;
-            } else {
-                ch_arg_len++;
-                ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
-                ch_arg[ch_arg_len - 1] = (char *) malloc(sizeof(char) * temp_len + 1);
-
-                strcpy(ch_arg[ch_arg_len - 1], temp);
-            }
-        }
-
-        ch_arg[ch_arg_len] = NULL;
-
-        ch_pid = fork();
-        if (ch_pid == -1) {
-            perror("fork");
-            exit(EXIT_FAILURE);
-        }
-      
-        if (ch_pid == 0) {
-            /* Child process */
-
-            /* Signal Handler */
-            signal(SIGTTIN, SIG_DFL);
-            signal(SIGTTOU, SIG_DFL);
-            signal(SIGINT, SIG_DFL);
-            signal(SIGTSTP, SIG_DFL);
-
-            int result;
-            const int MAX_NAME_SIZE = 128;
-            char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
-            int input_fd;
-            //pid_t inner_ch_pid = getpid();
-
-            /* Setting pgid as itself */
-            //setpgid(inner_ch_pid, inner_ch_pid);
-
-            /* Setting foreground as current child process */
-            //tcsetpgrp(STDIN_FILENO, getppid());
-
-            if (mode == MODE_INPUT) {
-                close(pipefd[1]);
-
-                read(pipefd[0], file_name, MAX_NAME_SIZE);
-
-                if ((input_fd = open(file_name, O_RDONLY)) < 0) {
-                    printf("Error in input file: %d\n", errno);
-                    exit(EXIT_FAILURE);
-                }
-
-                dup2(input_fd, STDIN_FILENO);
-
-            } else if (mode == MODE_OUTPUT) {
-                close(pipefd[0]);
-                dup2(pipefd[1], STDOUT_FILENO);
-            }
-
-            if (ch_arg_len > 1) {
-                /* Using an array of argument */
-                result = execv(cmd_name, ch_arg);
-            } else {
-                /* Only a command. No arguments */
-                result = execl(cmd_name, cmd_name, NULL);
-            }
-
-            /* Check exec() function error */
-            if (result < 0) {
-                switch(errno) {
-                    case ENOENT:
-                        printf("%s: command not found\n", cmd_name);
-                        break;
-                    default:
-                        printf("Error in child process: %d\n", errno);
-                }
-
-                exit(errno);
-            }
         } else {
-            /* Parent process */
+            /* If it is not */
 
-            /* Signal handler */
-            signal(SIGTSTP, SIG_IGN);
-            signal(SIGINT, SIG_IGN);
+            for (int i = 0; i < tokens_get_length(tokens); i++) {
+                char *temp = tokens_get_token(tokens, i);
+                size_t temp_len = strlen(temp);
 
-            /* If a symbol is '<' */
-            if (mode == MODE_INPUT) {
-                close(pipefd[0]);
-                write(pipefd[1], file_arg, strlen(file_arg));
-                close(pipefd[1]);
-            }
+                if (i != 0 && (strcmp("<", temp) == 0)) {
+                    mode = MODE_INPUT;
+                    file_arg = tokens_get_token(tokens, i + 1);
+                    break;
+                } else if (i != 0 && (strcmp(">", temp) == 0)) {
+                    mode = MODE_OUTPUT;
+                    file_arg = tokens_get_token(tokens, i + 1);
+                    break;
+                } else if (strcmp(">", temp) == 0 ||
+                    strcmp("<", temp) == 0) {
+                    printf("Invalid argument.\n");
+                    // Invalid argument
+                    exit(2);
+                } else if (strcmp("&", temp) == 0) {
+                    mode = MODE_BG;
+                } else {
+                    ch_arg_len++;
+                    ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
+                    ch_arg[ch_arg_len - 1] = (char *) malloc(sizeof(char) * temp_len + 1);
 
-            if (mode == MODE_BG) {
-                /* Move shell to foreground */
-               // tcsetpgrp(STDIN_FILENO, getppid());
-            } else {
-                /* Wait for termination of child process */
-                while ((w = waitpid(-1, &status, 0)) != ch_pid) {
-                    if (w < 0 && errno == ECHILD) {
-                        printf("Error in waitpid: %d\n", errno);
-                        break;
-                    }
-                    errno = 0;
+                    strcpy(ch_arg[ch_arg_len - 1], temp);
                 }
             }
 
-            /* If a symbol is '>' */
-            if (mode == MODE_OUTPUT) {
-                int output_fd;
-                close(pipefd[1]);
-
-                if ((output_fd = open(file_arg, O_WRONLY | O_CREAT, 
-                    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
-                    printf("Error in open(): %d\n", errno);
+            if (mode == MODE_INPUT || mode == MODE_OUTPUT) {
+                if (pipe(pipefd) == -1) {
+                    printf("Error in pipe(): %d\n", errno);
                     exit(EXIT_FAILURE);
                 }
-                
-                while (read(pipefd[0], &buf, 1) > 0) {
-                    write(output_fd, &buf, 1);
+            }
+
+            ch_arg[ch_arg_len] = NULL;
+
+            ch_pid = fork();
+            if (ch_pid == -1) {
+                perror("fork");
+                exit(EXIT_FAILURE);
+            }
+          
+            if (ch_pid == 0) {
+                /* Child process */
+
+                /* Signal Handler */
+                signal(SIGTTIN, SIG_DFL);
+                signal(SIGTTOU, SIG_DFL);
+                signal(SIGINT, SIG_DFL);
+                signal(SIGTSTP, SIG_DFL);
+
+                int result;
+                const int MAX_NAME_SIZE = 128;
+                char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
+                int input_fd;
+                //pid_t inner_ch_pid = getpid();
+
+                /* Setting pgid as itself */
+                //setpgid(inner_ch_pid, inner_ch_pid);
+
+                /* Setting foreground as current child process */
+                //tcsetpgrp(STDIN_FILENO, getppid());
+
+                if (mode == MODE_INPUT) {
+                    close(pipefd[1]);
+
+                    read(pipefd[0], file_name, MAX_NAME_SIZE);
+
+                    if ((input_fd = open(file_name, O_RDONLY)) < 0) {
+                        printf("Error in input file: %d\n", errno);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    dup2(input_fd, STDIN_FILENO);
+
+                } else if (mode == MODE_OUTPUT) {
+                    close(pipefd[0]);
+                    dup2(pipefd[1], STDOUT_FILENO);
+                } else if (mode == MODE_BG) {
+                    bg_proc++;
+                    printf("[%d] %d\n", bg_proc, getpid());
+                }
+
+                if (ch_arg_len > 1) {
+                    /* Using an array of argument */
+                    result = execv(cmd_name, ch_arg);
+                } else {
+                    /* Only a command. No arguments */
+                    result = execl(cmd_name, cmd_name, NULL);
+                }
+
+                /* Check exec() function error */
+                if (result < 0) {
+                    switch(errno) {
+                        case ENOENT:
+                            printf("%s: command not found\n", cmd_name);
+                            break;
+                        default:
+                            printf("Error in child process: %d\n", errno);
+                    }
+
+                    exit(errno);
+                }
+            } else {
+                /* Parent process */
+
+                /* Signal handler */
+                signal(SIGTSTP, SIG_IGN);
+                signal(SIGINT, SIG_IGN);
+
+                /* If a symbol is '<' */
+                if (mode == MODE_INPUT) {
+                    close(pipefd[0]);
+                    write(pipefd[1], file_arg, strlen(file_arg));
+                    close(pipefd[1]);
+                }
+
+                if (mode == MODE_BG) {
+                    /* Move shell process group to foreground */
+                    tcsetpgrp(STDIN_FILENO, getpid());
+                } else {
+                    /* Wait for termination of child process */
+                    while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
+                        if (w < 0 && errno == ECHILD) {
+                            printf("Error in waitpid: %d\n", errno);
+                            break;
+                        }
+                        errno = 0;
+                    }
+                }
+
+                /* If a symbol is '>' */
+                if (mode == MODE_OUTPUT) {
+                    int output_fd;
+                    close(pipefd[1]);
+
+                    if ((output_fd = open(file_arg, O_WRONLY | O_CREAT, 
+                        S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
+                        printf("Error in open(): %d\n", errno);
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    while (read(pipefd[0], &buf, 1) > 0) {
+                        write(output_fd, &buf, 1);
+                    }
+                    
+                    close(pipefd[0]);
                 }
                 
-                close(pipefd[0]);
-            }
-            
-            /* Flushing all STD stream */
-            fsync(STDIN_FILENO);
-            fsync(STDOUT_FILENO);
+                /* Flushing all STD stream */
+                fsync(STDIN_FILENO);
+                fsync(STDOUT_FILENO);
 
-            /* Destroy all buffers */
-            for (int i = 0; i < ch_arg_len; i++) {
-                free(ch_arg[i]);
-            }
+                /* Destroy all buffers */
+                for (int i = 0; i < ch_arg_len; i++) {
+                    free(ch_arg[i]);
+                }
 
-            free(ch_arg);
+                free(ch_arg);
+
+            }
 
         }
         //fprintf(stdout, "This shell doesn't know how to run programs.\n");
