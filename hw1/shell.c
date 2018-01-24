@@ -221,9 +221,13 @@ int main(unused int argc, unused char *argv[]) {
         if (part == NULL)
             cmd_name = find(cmd_name, path);
 
-        /* If the input data is only newline */
-        if (cmd_name == NULL) {
+        /* If there is no files  */
+        if (cmd_name == NULL) { 
             cmd_name = tokens_get_token(tokens, 0);
+            printf("%s: command not found\n", cmd_name);
+
+        } else if (tokens_get_length < 0) {
+            // input is newline
         } else {
             /* If it is not */
 
@@ -273,23 +277,17 @@ int main(unused int argc, unused char *argv[]) {
             if (ch_pid == 0) {
                 /* Child process */
 
-                /* Signal Handler */
-                signal(SIGTTIN, SIG_DFL);
-                signal(SIGTTOU, SIG_DFL);
-                signal(SIGINT, SIG_DFL);
-                signal(SIGTSTP, SIG_DFL);
-
                 int result;
                 const int MAX_NAME_SIZE = 128;
                 char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
                 int input_fd;
-                //pid_t inner_ch_pid = getpid();
+                pid_t inner_ch_pid = getpid();
 
                 /* Setting pgid as itself */
-                //setpgid(inner_ch_pid, inner_ch_pid);
+                setpgid(inner_ch_pid, inner_ch_pid);
 
                 /* Setting foreground as current child process */
-                //tcsetpgrp(STDIN_FILENO, getppid());
+                tcsetpgrp(STDIN_FILENO, inner_ch_pid);
 
                 if (mode == MODE_INPUT) {
                     close(pipefd[1]);
@@ -308,7 +306,6 @@ int main(unused int argc, unused char *argv[]) {
                     dup2(pipefd[1], STDOUT_FILENO);
                 } else if (mode == MODE_BG) {
                     bg_proc++;
-                    printf("[%d] %d\n", bg_proc, getpid());
                 }
 
                 if (ch_arg_len > 1) {
@@ -334,10 +331,6 @@ int main(unused int argc, unused char *argv[]) {
             } else {
                 /* Parent process */
 
-                /* Signal handler */
-                signal(SIGTSTP, SIG_IGN);
-                signal(SIGINT, SIG_IGN);
-
                 /* If a symbol is '<' */
                 if (mode == MODE_INPUT) {
                     close(pipefd[0]);
@@ -347,8 +340,15 @@ int main(unused int argc, unused char *argv[]) {
 
                 if (mode == MODE_BG) {
                     /* Move shell process group to foreground */
-                    tcsetpgrp(STDIN_FILENO, getpid());
+                    tcsetpgrp(STDIN_FILENO, getpgrp());
+                    printf("[%d] %d\n", bg_proc, ch_pid);
+
+                    /* Check if the child finishes */
+                    if ((w = waitpid(ch_pid, &status, WNOHANG | WUNTRACED)) == ch_pid)
+                        printf("[fg_proc_num] Done\t%s", cmd_name);
+
                 } else {
+                    tcsetpgrp(STDIN_FILENO, ch_pid);
                     /* Wait for termination of child process */
                     while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
                         if (w < 0 && errno == ECHILD) {
@@ -357,6 +357,7 @@ int main(unused int argc, unused char *argv[]) {
                         }
                         errno = 0;
                     }
+                    tcsetpgrp(STDIN_FILENO, getpid());
                 }
 
                 /* If a symbol is '>' */
