@@ -250,6 +250,10 @@ int main(unused int argc, unused char *argv[]) {
                     exit(2);
                 } else if (strcmp("&", temp) == 0) {
                     mode = MODE_BG;
+
+                    /* inherits signal */
+                    //signal(SIGTTOU, SIG_IGN);
+                    //signal(SIGTTIN, SIG_IGN);
                 } else {
                     ch_arg_len++;
                     ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
@@ -277,6 +281,8 @@ int main(unused int argc, unused char *argv[]) {
             if (ch_pid == 0) {
                 /* Child process */
 
+                /* Signal configuration */
+
                 int result;
                 const int MAX_NAME_SIZE = 128;
                 char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
@@ -285,9 +291,6 @@ int main(unused int argc, unused char *argv[]) {
 
                 /* Setting pgid as itself */
                 setpgid(inner_ch_pid, inner_ch_pid);
-
-                /* Setting foreground as current child process */
-                tcsetpgrp(STDIN_FILENO, inner_ch_pid);
 
                 if (mode == MODE_INPUT) {
                     close(pipefd[1]);
@@ -338,6 +341,7 @@ int main(unused int argc, unused char *argv[]) {
                     close(pipefd[1]);
                 }
 
+                /* If a symbol is '&' */
                 if (mode == MODE_BG) {
                     /* Move shell process group to foreground */
                     tcsetpgrp(STDIN_FILENO, getpgrp());
@@ -348,7 +352,9 @@ int main(unused int argc, unused char *argv[]) {
                         printf("[fg_proc_num] Done\t%s", cmd_name);
 
                 } else {
+                    /* Setting foreground as current child process */
                     tcsetpgrp(STDIN_FILENO, ch_pid);
+
                     /* Wait for termination of child process */
                     while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
                         if (w < 0 && errno == ECHILD) {
@@ -357,6 +363,12 @@ int main(unused int argc, unused char *argv[]) {
                         }
                         errno = 0;
                     }
+
+                    /* I don't know why I should put this ignorance 
+                     * Terminal keeps sending this siganl */
+                    signal(SIGTTOU, SIG_IGN);
+
+                    /* put the shell to the foreground */
                     tcsetpgrp(STDIN_FILENO, getpid());
                 }
 
@@ -379,8 +391,8 @@ int main(unused int argc, unused char *argv[]) {
                 }
                 
                 /* Flushing all STD stream */
-                fsync(STDIN_FILENO);
-                fsync(STDOUT_FILENO);
+                //fsync(STDIN_FILENO);
+                //fsync(STDOUT_FILENO);
 
                 /* Destroy all buffers */
                 for (int i = 0; i < ch_arg_len; i++) {
