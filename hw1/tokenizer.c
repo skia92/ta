@@ -3,13 +3,6 @@
 #include <string.h>
 #include "tokenizer.h"
 
-struct tokens {
-  size_t tokens_length;
-  char **tokens; // string token array
-  size_t buffers_length;
-  char **buffers; // string array
-};
-
 static void *vector_push(char ***pointer, size_t *size, void *elem) {
     /* The realloc() function changes the size of the memory block pointed
      * to by ptr to size bytes. The contents will be unchanged in the

@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "tokenizer.h"
+#include "process.h"
 
 /* Extern variable */
 extern int errno;
@@ -85,15 +85,15 @@ int cmd_pwd(unused struct tokens *tokens) {
 /* Takes one argumnet, a directory path, and changes the current working directory 
  * to that directory */
 int cmd_cd(unused struct tokens *tokens) {
-    char *tar_dir = tokens_get_token(tokens, 1);
+    char *target = tokens_get_token(tokens, 1);
     int result;
 
-    if (tar_dir == NULL) {
+    if (target == NULL) {
         printf("You should put at least one argument for this cmd.\n");
         return -1;
     }
 
-    result = chdir(tar_dir);
+    result = chdir(target);
 
     if (result < 0) {
         switch(errno) {
@@ -148,6 +148,7 @@ void init_shell() {
   }
 }
 
+/*
 char *find(char *file_name, char *path) {
    char *full_path = NULL;
    char *ptr;
@@ -173,13 +174,17 @@ char *find(char *file_name, char *path) {
 
    return full_path;
 }
+*/
+
+void signal_handler(int signo) {
+    return;
+}
 
 int main(unused int argc, unused char *argv[]) {
   init_shell();
 
   static char line[4096];
   int line_num = 0;
-  int bg_proc = 0;
 
   /* Please only print shell prompts when standard input is not a tty */
   if (shell_is_interactive)
@@ -189,90 +194,24 @@ int main(unused int argc, unused char *argv[]) {
     /* Split our line into words. */
     struct tokens *tokens = tokenize(line);
 
-
     /* Find which built-in function to run. */
     int fundex = lookup(tokens_get_token(tokens, 0));
 
     if (fundex >= 0) {
-      cmd_table[fundex].fun(tokens);
+        cmd_table[fundex].fun(tokens);
     } else if (tokens_get_length(tokens) > 0) {
         /* If tokens variable is valid */
         pid_t ch_pid, w;
+        struct process *proc = create_process(tokens);
         int status;
-        char *path = getenv("PATH");
-        char *cmd_name = tokens_get_token(tokens, 0);
-        char *part;
-        char *file_arg;
-        
-        char **ch_arg = NULL;
-        int ch_arg_len = 0;
-
-        int pipefd[2];
-        const int MODE_INPUT = 0,
-            MODE_OUTPUT = 1,
-            MODE_NORMAL = 2,
-            MODE_BG = 3;
-        int mode = MODE_NORMAL;
-        char buf;
-
-        part = strchr(cmd_name, '/');
-
-        /* If it is not based on the path */
-        if (part == NULL)
-            cmd_name = find(cmd_name, path);
 
         /* If there is no files  */
-        if (cmd_name == NULL) { 
-            cmd_name = tokens_get_token(tokens, 0);
-            printf("%s: command not found\n", cmd_name);
-
-        } else if (tokens_get_length < 0) {
-            // input is newline
+        if (proc == NULL) { 
+            printf("%s: command not found\n", proc->command);
         } else {
             /* If it is not */
-
-            for (int i = 0; i < tokens_get_length(tokens); i++) {
-                char *temp = tokens_get_token(tokens, i);
-                size_t temp_len = strlen(temp);
-
-                if (i != 0 && (strcmp("<", temp) == 0)) {
-                    mode = MODE_INPUT;
-                    file_arg = tokens_get_token(tokens, i + 1);
-                    break;
-                } else if (i != 0 && (strcmp(">", temp) == 0)) {
-                    mode = MODE_OUTPUT;
-                    file_arg = tokens_get_token(tokens, i + 1);
-                    break;
-                } else if (strcmp(">", temp) == 0 ||
-                    strcmp("<", temp) == 0) {
-                    printf("Invalid argument.\n");
-                    // Invalid argument
-                    exit(2);
-                } else if (strcmp("&", temp) == 0) {
-                    mode = MODE_BG;
-
-                    /* inherits signal */
-                    //signal(SIGTTOU, SIG_IGN);
-                    //signal(SIGTTIN, SIG_IGN);
-                } else {
-                    ch_arg_len++;
-                    ch_arg = (char **) realloc(ch_arg, sizeof(char *) * (ch_arg_len + 1));
-                    ch_arg[ch_arg_len - 1] = (char *) malloc(sizeof(char) * temp_len + 1);
-
-                    strcpy(ch_arg[ch_arg_len - 1], temp);
-                }
-            }
-
-            if (mode == MODE_INPUT || mode == MODE_OUTPUT) {
-                if (pipe(pipefd) == -1) {
-                    printf("Error in pipe(): %d\n", errno);
-                    exit(EXIT_FAILURE);
-                }
-            }
-
-            ch_arg[ch_arg_len] = NULL;
-
             ch_pid = fork();
+
             if (ch_pid == -1) {
                 perror("fork");
                 exit(EXIT_FAILURE);
@@ -280,127 +219,22 @@ int main(unused int argc, unused char *argv[]) {
           
             if (ch_pid == 0) {
                 /* Child process */
+                run_process(proc);
 
-                /* Signal configuration */
-
-                int result;
-                const int MAX_NAME_SIZE = 128;
-                char *file_name = (char *) malloc(sizeof(char) * MAX_NAME_SIZE);
-                int input_fd;
-                pid_t inner_ch_pid = getpid();
-
-                /* Setting pgid as itself */
-                setpgid(inner_ch_pid, inner_ch_pid);
-
-                if (mode == MODE_INPUT) {
-                    close(pipefd[1]);
-
-                    read(pipefd[0], file_name, MAX_NAME_SIZE);
-
-                    if ((input_fd = open(file_name, O_RDONLY)) < 0) {
-                        printf("Error in input file: %d\n", errno);
-                        exit(EXIT_FAILURE);
-                    }
-
-                    dup2(input_fd, STDIN_FILENO);
-
-                } else if (mode == MODE_OUTPUT) {
-                    close(pipefd[0]);
-                    dup2(pipefd[1], STDOUT_FILENO);
-                } else if (mode == MODE_BG) {
-                    bg_proc++;
-                }
-
-                if (ch_arg_len > 1) {
-                    /* Using an array of argument */
-                    result = execv(cmd_name, ch_arg);
-                } else {
-                    /* Only a command. No arguments */
-                    result = execl(cmd_name, cmd_name, NULL);
-                }
-
-                /* Check exec() function error */
-                if (result < 0) {
-                    switch(errno) {
-                        case ENOENT:
-                            printf("%s: command not found\n", cmd_name);
-                            break;
-                        default:
-                            printf("Error in child process: %d\n", errno);
-                    }
-
-                    exit(errno);
-                }
             } else {
                 /* Parent process */
 
-                /* If a symbol is '<' */
-                if (mode == MODE_INPUT) {
-                    close(pipefd[0]);
-                    write(pipefd[1], file_arg, strlen(file_arg));
-                    close(pipefd[1]);
-                }
-
-                /* If a symbol is '&' */
-                if (mode == MODE_BG) {
-                    /* Move shell process group to foreground */
-                    tcsetpgrp(STDIN_FILENO, getpgrp());
-                    printf("[%d] %d\n", bg_proc, ch_pid);
-
-                    /* Check if the child finishes */
-                    if ((w = waitpid(ch_pid, &status, WNOHANG | WUNTRACED)) == ch_pid)
-                        printf("[fg_proc_num] Done\t%s", cmd_name);
-
-                } else {
-                    /* Setting foreground as current child process */
-                    tcsetpgrp(STDIN_FILENO, ch_pid);
-
-                    /* Wait for termination of child process */
-                    while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
-                        if (w < 0 && errno == ECHILD) {
-                            printf("Error in waitpid: %d\n", errno);
-                            break;
-                        }
-                        errno = 0;
+                /* Wait for termination of child process */
+                while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
+                    if (w < 0 && errno == ECHILD) {
+                        printf("Error in waitpid: %d\n", errno);
+                        break;
                     }
-
-                    /* I don't know why I should put this ignorance 
-                     * Terminal keeps sending this siganl */
-                    signal(SIGTTOU, SIG_IGN);
-
-                    /* put the shell to the foreground */
-                    tcsetpgrp(STDIN_FILENO, getpid());
+                    errno = 0;
                 }
 
-                /* If a symbol is '>' */
-                if (mode == MODE_OUTPUT) {
-                    int output_fd;
-                    close(pipefd[1]);
-
-                    if ((output_fd = open(file_arg, O_WRONLY | O_CREAT, 
-                        S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
-                        printf("Error in open(): %d\n", errno);
-                        exit(EXIT_FAILURE);
-                    }
-                    
-                    while (read(pipefd[0], &buf, 1) > 0) {
-                        write(output_fd, &buf, 1);
-                    }
-                    
-                    close(pipefd[0]);
-                }
-                
-                /* Flushing all STD stream */
-                //fsync(STDIN_FILENO);
-                //fsync(STDOUT_FILENO);
-
-                /* Destroy all buffers */
-                for (int i = 0; i < ch_arg_len; i++) {
-                    free(ch_arg[i]);
-                }
-
-                free(ch_arg);
-
+                /* put the shell to the foreground */
+                tcsetpgrp(STDIN_FILENO, getpid());
             }
 
         }
