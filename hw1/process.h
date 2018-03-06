@@ -9,6 +9,7 @@ struct process {
     pid_t pgid;
     char *command;
     char **args;
+    int args_length; // including command arg
     struct process *next;
     struct process *prev;
     int redirect;

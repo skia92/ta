@@ -42,7 +42,9 @@ char *resolve_path(char *command) {
 struct process *create_process(struct tokens *tokens) {
     char *command = tokens_get_token(tokens, 0);
     char **args = tokens->tokens;
-    struct process *proc;
+    int length = tokens_get_length(tokens);
+    unsigned int count = 0;
+    struct process *proc = NULL;
 
     if (access(command, F_OK) < 0) {
         command = resolve_path(command);
@@ -53,23 +55,35 @@ struct process *create_process(struct tokens *tokens) {
         proc->next = NULL;
         proc->prev = NULL;
         proc->bg_proc = 0;
+        proc->args_length = 0;
         proc->file_arg = NULL;
+        proc->redirect = -1;
 
-        proc->args = args;
-        //proc->command = (char *) malloc(sizeof(char) * strlen(command) + 1);
-        //strcpy(proc->command, command);
-        proc->command = command;
+        proc->command = (char *) malloc(sizeof(char) * strlen(command));
+        strcpy(proc->command, command);
 
-        for (int i = 0; i < tokens_get_length(tokens); i++) {
+        for (int i = 0; i < length; i++) {
+
             if (strcmp("<", args[i]) == 0) {
                 proc->redirect = INPUT;
                 proc->file_arg = args[i + 1];
+                break;
             } else if (strcmp(">", args[i]) == 0) {
                 proc->redirect = OUTPUT;
                 proc->file_arg = args[i + 1];
+                break;
             } else if (strcmp("&", args[i]) == 0) {
                 proc->bg_proc = TRUE;
             }
+
+            count++;
+        }
+
+        proc->args_length = count;
+        proc->args = (char **) malloc(sizeof(char *) * count);
+        for (int i = 0; i < count; i++) {
+            proc->args[i] = (char *) malloc(sizeof(char) * strlen(args[i]));
+            strcpy(proc->args[i], args[i]);
         }
     }
 
@@ -83,7 +97,7 @@ void run_process(struct process *proc) {
     setpgid(0, 0);
 
     /* Setting foreground as current child process */
-    tcsetpgrp(STDIN_FILENO, getpid());
+    //tcsetpgrp(STDIN_FILENO, getpid());
 
     switch(proc->redirect) {
         case INPUT:
@@ -96,10 +110,18 @@ void run_process(struct process *proc) {
             dup2(fd, STDOUT_FILENO);
             break;
         default:
-            printf("Something is wrong with redirection");
+            break;
+    }
+
+    for (int i = 0; i < proc->args_length; i++) {
+        printf("args[%d]: %s\n", i, proc->args[i]);
     }
 
     execv(proc->command, proc->args);
 
     return;
+}
+
+void detroy_process(struct process *proc) {
+
 }

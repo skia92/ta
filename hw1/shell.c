@@ -207,8 +207,9 @@ int main(unused int argc, unused char *argv[]) {
 
         /* If there is no files  */
         if (proc == NULL) { 
-            printf("%s: command not found\n", proc->command);
+            printf("%s: command not found\n", tokens_get_token(tokens, 0));
         } else {
+            
             /* If it is not */
             ch_pid = fork();
 
@@ -234,8 +235,10 @@ int main(unused int argc, unused char *argv[]) {
                 }
 
                 /* put the shell to the foreground */
-                tcsetpgrp(STDIN_FILENO, getpid());
+                //tcsetpgrp(STDIN_FILENO, getpid());
+                free(proc);
             }
+            
 
         }
         //fprintf(stdout, "This shell doesn't know how to run programs.\n");
