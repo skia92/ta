@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -54,7 +55,7 @@ struct process *create_process(struct tokens *tokens) {
         proc = (struct process *) malloc(sizeof(struct process));
         proc->next = NULL;
         proc->prev = NULL;
-        proc->bg_proc = 0;
+        proc->background = FALSE;
         proc->args_length = 0;
         proc->file_arg = NULL;
         proc->redirect = -1;
@@ -73,11 +74,15 @@ struct process *create_process(struct tokens *tokens) {
                 proc->file_arg = args[i + 1];
                 break;
             } else if (strcmp("&", args[i]) == 0) {
-                proc->bg_proc = TRUE;
+                proc->background = TRUE;
             }
 
             count++;
         }
+
+        /* struct process args 에 arguments 를 assign 
+         * >, <. & 기호를 제외
+         */
 
         proc->args_length = count;
         proc->args = (char **) malloc(sizeof(char *) * count);
@@ -93,11 +98,11 @@ struct process *create_process(struct tokens *tokens) {
 void run_process(struct process *proc) {
     int fd;
 
+    proc->pid = getpid();
+    proc->pgid = getpgid(proc->pid);
+    
     /* Setting pgid as itself */
     setpgid(0, 0);
-
-    /* Setting foreground as current child process */
-    //tcsetpgrp(STDIN_FILENO, getpid());
 
     switch(proc->redirect) {
         case INPUT:
@@ -122,6 +127,14 @@ void run_process(struct process *proc) {
     return;
 }
 
-void detroy_process(struct process *proc) {
+void destroy_process(struct process *proc) {
+    if (!proc) {
+        return;
+    }
 
+    for (int i = 0; i < proc->args_length; i++) {
+        free(proc->args[i]);
+    }
+
+    free(proc);
 }

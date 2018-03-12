@@ -13,7 +13,7 @@ struct process {
     struct process *next;
     struct process *prev;
     int redirect;
-    int bg_proc;
+    unsigned int background;
     char *file_arg;
 };
 
@@ -25,3 +25,6 @@ struct process *create_process(struct tokens *tokens);
 
 /* Run a process */
 void run_process(struct process *proc);
+
+/* Destroy a process */
+void destroy_process(struct process *proc);

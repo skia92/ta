@@ -148,36 +148,27 @@ void init_shell() {
   }
 }
 
-/*
-char *find(char *file_name, char *path) {
-   char *full_path = NULL;
-   char *ptr;
-   char *temp_path = (char *) malloc(sizeof(char) * strlen(path) + 1);
-   unsigned int length = strlen(file_name);
-
-   strncpy(temp_path, path, strlen(path) + 1);
-   ptr = strtok(temp_path, ":");
-   while (ptr != NULL) {
-       full_path = (char *) malloc(sizeof(char) * (length + 1 + strlen(ptr) + 1));
-
-       strcpy(full_path, ptr);
-       strcat(full_path, "/");
-       strcat(full_path, file_name);
- 
-       if (access(full_path, F_OK) == 0)
-           break;
-
-       free(full_path);
-       full_path = NULL;
-       ptr = strtok(NULL, ":");
-   }
-
-   return full_path;
-}
-*/
-
 void signal_handler(int signo) {
     return;
+}
+
+/*
+ * https://www.gnu.org/software/libc/manual/html_node/Foreground-and-Background.html
+ */
+void put_process_in_foreground(struct process *proc, int cont) {
+    int status;
+
+    /* Put a process in foreground */
+    tcsetpgrp(STDIN_FILENO, proc->pgid);
+
+    if (cont) {
+        // if a process has to be continued,
+    }
+
+    waitpid(-1, &status, WUNTRACED);
+
+    /* Make Terminal back to foreground */
+    tcsetpgrp(STDIN_FILENO, proc->ppid);
 }
 
 int main(unused int argc, unused char *argv[]) {
@@ -197,19 +188,15 @@ int main(unused int argc, unused char *argv[]) {
     /* Find which built-in function to run. */
     int fundex = lookup(tokens_get_token(tokens, 0));
 
-    if (fundex >= 0) {
-        cmd_table[fundex].fun(tokens);
     } else if (tokens_get_length(tokens) > 0) {
         /* If tokens variable is valid */
-        pid_t ch_pid, w;
+        pid_t ch_pid;
         struct process *proc = create_process(tokens);
-        int status;
 
         /* If there is no files  */
         if (proc == NULL) { 
             printf("%s: command not found\n", tokens_get_token(tokens, 0));
         } else {
-            
             /* If it is not */
             ch_pid = fork();
 
@@ -220,23 +207,18 @@ int main(unused int argc, unused char *argv[]) {
           
             if (ch_pid == 0) {
                 /* Child process */
+                proc->ppid = getppid();
+
                 run_process(proc);
 
             } else {
                 /* Parent process */
 
                 /* Wait for termination of child process */
-                while ((w = waitpid(-1, &status, WNOHANG | WUNTRACED)) != ch_pid) {
-                    if (w < 0 && errno == ECHILD) {
-                        printf("Error in waitpid: %d\n", errno);
-                        break;
-                    }
-                    errno = 0;
+                if (!proc->background) {
+                    put_process_in_foreground(proc, 0);
                 }
-
-                /* put the shell to the foreground */
-                //tcsetpgrp(STDIN_FILENO, getpid());
-                free(proc);
+                destroy_process(proc);
             }
             
 
