@@ -12,6 +12,9 @@
 #define TRUE 1
 #define FALSE 0
 
+/* PATH variable 에 있는 여러 경로들 중에 
+ * command 를 실행할 수 있는 경로가 있는지 파악하는 함수
+ */
 char *resolve_path(char *command) {
     char *path = NULL;
     char *ptr;
@@ -40,6 +43,7 @@ char *resolve_path(char *command) {
     return NULL;
 }
 
+/* 새로운 process 생성하기 */
 struct process *create_process(struct tokens *tokens) {
     char *command = tokens_get_token(tokens, 0);
     char **args = tokens->tokens;
@@ -63,6 +67,7 @@ struct process *create_process(struct tokens *tokens) {
         proc->command = (char *) malloc(sizeof(char) * strlen(command));
         strcpy(proc->command, command);
 
+        /* redirection 및 background 확인하기 */
         for (int i = 0; i < length; i++) {
 
             if (strcmp("<", args[i]) == 0) {
@@ -75,6 +80,7 @@ struct process *create_process(struct tokens *tokens) {
                 break;
             } else if (strcmp("&", args[i]) == 0) {
                 proc->background = TRUE;
+		break;
             }
 
             count++;
@@ -95,6 +101,7 @@ struct process *create_process(struct tokens *tokens) {
     return proc;
 }
 
+/* Process exec 로 실행하기 */
 void run_process(struct process *proc) {
     int fd;
 
@@ -119,7 +126,7 @@ void run_process(struct process *proc) {
     }
 
     for (int i = 0; i < proc->args_length; i++) {
-        printf("args[%d]: %s\n", i, proc->args[i]);
+        //printf("args[%d]: %s\n", i, proc->args[i]);
     }
 
     execv(proc->command, proc->args);

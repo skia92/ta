@@ -155,11 +155,11 @@ void signal_handler(int signo) {
 /*
  * https://www.gnu.org/software/libc/manual/html_node/Foreground-and-Background.html
  */
-void put_process_in_foreground(struct process *proc, int cont) {
+void put_process_in_foreground(pid_t ch_pid, int cont) {
     int status;
 
     /* Put a process in foreground */
-    tcsetpgrp(STDIN_FILENO, proc->pgid);
+    tcsetpgrp(STDIN_FILENO, ch_pid);
 
     if (cont) {
         // if a process has to be continued,
@@ -168,7 +168,7 @@ void put_process_in_foreground(struct process *proc, int cont) {
     waitpid(-1, &status, WUNTRACED);
 
     /* Make Terminal back to foreground */
-    tcsetpgrp(STDIN_FILENO, proc->ppid);
+    tcsetpgrp(STDIN_FILENO, shell_pgid);
 }
 
 int main(unused int argc, unused char *argv[]) {
@@ -188,6 +188,8 @@ int main(unused int argc, unused char *argv[]) {
     /* Find which built-in function to run. */
     int fundex = lookup(tokens_get_token(tokens, 0));
 
+    if (fundex >= 0) {
+        cmd_table[fundex].fun(tokens);
     } else if (tokens_get_length(tokens) > 0) {
         /* If tokens variable is valid */
         pid_t ch_pid;
@@ -197,6 +199,7 @@ int main(unused int argc, unused char *argv[]) {
         if (proc == NULL) { 
             printf("%s: command not found\n", tokens_get_token(tokens, 0));
         } else {
+            signal(SIGTTOU, SIG_IGN);
             /* If it is not */
             ch_pid = fork();
 
@@ -206,9 +209,10 @@ int main(unused int argc, unused char *argv[]) {
             }
           
             if (ch_pid == 0) {
+                signal(SIGTTOU, SIG_DFL);
                 /* Child process */
                 proc->ppid = getppid();
-
+                proc->pid = ch_pid;
                 run_process(proc);
 
             } else {
@@ -216,7 +220,7 @@ int main(unused int argc, unused char *argv[]) {
 
                 /* Wait for termination of child process */
                 if (!proc->background) {
-                    put_process_in_foreground(proc, 0);
+                    put_process_in_foreground(ch_pid, 0);
                 }
                 destroy_process(proc);
             }
