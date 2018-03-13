@@ -80,7 +80,7 @@ struct process *create_process(struct tokens *tokens) {
                 break;
             } else if (strcmp("&", args[i]) == 0) {
                 proc->background = TRUE;
-		break;
+                break;
             }
 
             count++;
@@ -96,6 +96,9 @@ struct process *create_process(struct tokens *tokens) {
             proc->args[i] = (char *) malloc(sizeof(char) * strlen(args[i]));
             strcpy(proc->args[i], args[i]);
         }
+
+        /* process profilling */
+        //printf("proc->background: %d\n", proc->background);
     }
 
     return proc;
@@ -128,6 +131,10 @@ void run_process(struct process *proc) {
     for (int i = 0; i < proc->args_length; i++) {
         //printf("args[%d]: %s\n", i, proc->args[i]);
     }
+
+    /* restoring signal */
+    signal(SIGTTOU, SIG_DFL);
+    signal(SIGTTIN, SIG_DFL);
 
     execv(proc->command, proc->args);
 

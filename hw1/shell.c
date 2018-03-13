@@ -149,6 +149,13 @@ void init_shell() {
 }
 
 void signal_handler(int signo) {
+    int status;
+
+    if (signo == SIGCHLD) {
+        /* background process 작업이 다 끝나면 update */
+        waitpid(-1, &status, WUNTRACED);
+    }
+
     return;
 }
 
@@ -169,6 +176,7 @@ void put_process_in_foreground(pid_t ch_pid, int cont) {
 
     /* Make Terminal back to foreground */
     tcsetpgrp(STDIN_FILENO, shell_pgid);
+
 }
 
 int main(unused int argc, unused char *argv[]) {
@@ -199,8 +207,10 @@ int main(unused int argc, unused char *argv[]) {
         if (proc == NULL) { 
             printf("%s: command not found\n", tokens_get_token(tokens, 0));
         } else {
+            /* signal handling */
             signal(SIGTTOU, SIG_IGN);
-            /* If it is not */
+            signal(SIGCHLD, signal_handler);
+
             ch_pid = fork();
 
             if (ch_pid == -1) {
@@ -209,10 +219,8 @@ int main(unused int argc, unused char *argv[]) {
             }
           
             if (ch_pid == 0) {
-                signal(SIGTTOU, SIG_DFL);
                 /* Child process */
                 proc->ppid = getppid();
-                proc->pid = ch_pid;
                 run_process(proc);
 
             } else {

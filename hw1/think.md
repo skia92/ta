@@ -12,6 +12,12 @@
 ## 벌써 12 Mar, 2018
 ㅋㅋㅋㅋㅋㅋㅋㅋㅋ미루다가 벌써 3월임. 여전히 vim 이 안되는데 왜 그런지 모르겠음.
 
+## 13 Mar, 2018
+ㅋㅋㅋㅋ vim 이 안됬던 이유는 내가 tcsetpgrp pgid 값을 잘못 줬기 때문이다. 그 이외에 background process 실행하고 나머지 process 를 foreground 로 실행해도 background 로 바뀌는 문제가 있었는데 SIGCHLD 로 해결하였다.
+
+1. tcsetpgrp 는 parent process 에서 설정해야하는가?
+2. 어떠한 signal 을 미리 설정해야하는가?
+
 
 
 
